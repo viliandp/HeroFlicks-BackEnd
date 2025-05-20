@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  heroflicksbackend:
+    image: heroflicksbackend
+    build:
+      context: .
+      # Asegúrate que tu Dockerfile expone el puerto 3000
+      dockerfile: ./Dockerfile
+    ports:
+      # Puerto Host 3007 (de tu .env) mapeado al Puerto Contenedor 3000
+      - "3007:3000"
+    environment:
+      # Entorno para producción en Docker
+      NODE_ENV: production
+      # Conexión a la BDD dentro de Docker
+      DB_HOST: db # Nombre del servicio MySQL
+      DB_USER: docker_user # Usuario dedicado (mejor que root)
+      DB_PASSWORD: usuario # ¡¡ADVERTENCIA: Contraseña MUY INSEGURA!! Usada de tu .env
+      DB_NAME: heroflicks # Nombre de BDD de tu .env
+      PORT: 3000 # Puerto interno en el que corre Node.js
+      JWT_SECRET: mySecureRandomSecretKey1234567890! # Secreto JWT de tu .env
+    depends_on:
+      - db
+    networks:
+      - comic-network
+
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      # ¡¡NECESITAS CAMBIAR ESTA CONTRASEÑA ROOT!!
+      MYSQL_ROOT_PASSWORD: root
+      # Base de datos a crear (de tu .env)
+      MYSQL_DATABASE: heroflicks
+      # Usuario que usará la aplicación
+      MYSQL_USER: docker_user
+      # Contraseña para el usuario de la aplicación (¡INSEGURA!)
+      MYSQL_PASSWORD: usuario # ¡¡ADVERTENCIA: Contraseña MUY INSEGURA!! Usada de tu .env
+    volumes:
+      # Persistencia de datos
+      - mysql_data:/var/lib/mysql
+    ports:
+      # Opcional: Exponer puerto MySQL al host
+      - "33066:3306"
+    networks:
+      - comic-network
+
+networks:
+  comic-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
