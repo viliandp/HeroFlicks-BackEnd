@@ -4,6 +4,9 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/user');
 const router = express.Router();
 
+/**Controlador con las rutas del usuario, aquí es dónde podemos
+registrarnos, logearnos y modificar los datos del*/ 
+
 // Ruta de registro
 router.post('/register', async (req, res) => {
   const { username, email, password } = req.body;

@@ -15,12 +15,12 @@ export const connectToDatabase = async () => {
       queueLimit: 0,
     })
 
-    // Test connection
+    // Comprobar la conexion
     const connection = await pool.getConnection()
     console.log("Successfully connected to MySQL database")
     connection.release()
 
-    // Create tables if they don't exist
+    // Crear las tablas si no existen *para hacer pruebas*
     await initializeDatabase()
 
     return pool
@@ -37,7 +37,9 @@ export const getDbConnection = () => {
   return pool
 }
 
-// Initialize database tables
+// Inicializando la tabla de usuarios para comprobar qué funciona la conexión y se
+// pueden realizar consultas a la base de datos
+
 const initializeDatabase = async () => {
   const createUsersTable = `
     CREATE TABLE IF NOT EXISTS users (

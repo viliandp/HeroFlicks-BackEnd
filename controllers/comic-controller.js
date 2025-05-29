@@ -15,11 +15,14 @@ const getTagsForComicId = async (comicId, pool) => {
        ORDER BY t.nombre ASC`, // Opcional: ordenar tags alfabéticamente
       [comicId]
     );
-    // Mapear para que coincida con la estructura de la data class de Kotlin (id, name)
+
     return tags.map(tag => ({ id: tag.id, name: tag.nombre }));
   } catch (error) {
     console.error(`Error fetching tags for comic_id ${comicId}:`, error);
-    return []; // Devolver array vacío en caso de error para no romper el flujo principal
+    return []; 
+    /**  Aquí tengo que devolver un array vacío en 
+     * caso de error para no romper el flujo principal
+    */
   }
 };
 
@@ -36,11 +39,9 @@ const mapComicData = (comicRow, tags = [], likesCount = 0, commentsCount = 0) =>
     createdAt: comicRow.created_at ? new Date(comicRow.created_at).toISOString() : null,
     likesCount: parseInt(likesCount) || 0,
     commentsCount: parseInt(commentsCount) || 0,
-    tags: tags, // ¡Aquí es donde se asignan los tags!
+    tags: tags
   };
 };
-
-// --- CONTROLLERS ---
 
 // Obtener todos los cómics (JSON)
 export const getAllComics = async (req, res) => {
@@ -71,8 +72,7 @@ export const getAllComics = async (req, res) => {
       }
     }
 
-    baseQuery += " ORDER BY c.nombre ASC"; // O el orden que prefieras para la lista general
-    // Podrías añadir paginación aquí si lo necesitas
+    baseQuery += " ORDER BY c.nombre ASC"; 
 
     const [comicsRows] = await pool.query(baseQuery, queryParams);
 
@@ -133,41 +133,41 @@ export const getComicPdfById = async (req, res) => {
     const [comicData] = await pool.query("SELECT ruta_pdf, nombre FROM comics WHERE id = ?", [id]);
 
     if (comicData.length === 0) {
-      return res.status(404).json({ success: false, message: "Comic not found (for PDF)" });
+      return res.status(404).json({ success: false, message: "Cómic no encontrado (no existe en la base de datos)" });
     }
     const relativePdfPath = comicData[0].ruta_pdf;
     const comicName = comicData[0].nombre || `comic_${id}`;
     if (!relativePdfPath) {
-      console.error(`PDF path is null or empty for comic ID: ${id}`);
-      return res.status(404).json({ success: false, message: "PDF path not defined for this comic" });
+      console.error(`PDF la ruta está null o vacía para el comic ID: ${id}`);
+      return res.status(404).json({ success: false, message: "Ruta PDF no definida para este cómic" });
     }
     const absolutePdfPath = path.resolve(process.cwd(), relativePdfPath);
-    console.log(`Attempting to serve PDF from absolute path: ${absolutePdfPath}`);
+    console.log(`Intentando servir el PDF desde la ruta absoluta: ${absolutePdfPath}`);
     if (!fs.existsSync(absolutePdfPath)) {
-      console.error(`File not found at resolved absolute path: ${absolutePdfPath} (relative was: ${relativePdfPath}) for comic ID: ${id}`);
-      return res.status(404).json({ success: false, message: "PDF file not found on server at expected location" });
+      console.error(`Archivo no encontrado en la ruta absoluta: ${absolutePdfPath} (la relativa era: ${relativePdfPath}) para el cómic con ID: ${id}`);
+      return res.status(404).json({ success: false, message: "El archivo PDF no se encontró en el servidor en la ruta esperada" });
     }
     const fileName = path.basename(absolutePdfPath) || `${comicName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
     res.sendFile(absolutePdfPath, (err) => {
       if (err) {
-        console.error(`Error sending PDF file (${fileName}) for comic ID ${id}:`, err);
+        console.error(`Error mandando el archivo PDF (${fileName}) para el cómic con ID ${id}:`, err);
         if (!res.headersSent) {
           if (err.code === 'ENOENT') {
-            res.status(404).json({ success: false, message: "PDF file disappeared before sending" });
+            res.status(404).json({ success: false, message: "El archivo PDF ha desaparecido antes de ser enviado" });
           } else {
-            res.status(500).json({ success: false, message: "Error sending PDF file" });
+            res.status(500).json({ success: false, message: "Error enviando el archivo PDF" });
           }
         }
       } else {
-        console.log(`Successfully sent PDF: ${fileName} for comic ID: ${id}`);
+        console.log(`PDF enviado correctamente: ${fileName} para el cómic con ID : ${id}`);
       }
     });
   } catch (error) {
-    console.error(`Error in getComicPdfById for ID ${req.params.id}:`, error);
+    console.error(`Error en getComicPdfById para el ID ${req.params.id}:`, error);
     if (!res.headersSent) {
-      const errorMessage = process.env.NODE_ENV !== 'production' ? error.message : "Failed to process PDF request";
+      const errorMessage = process.env.NODE_ENV !== 'production' ? error.message : "Fallo en procesar la petición del PDF";
       res.status(500).json({ success: false, error: errorMessage });
     }
   }
