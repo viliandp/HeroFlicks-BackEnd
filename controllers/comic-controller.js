@@ -3,9 +3,10 @@
 import fs from 'fs';
 import path from 'path';
 import { getDbConnection } from "../config/database.js";
+import multer from 'multer';
 
 // --- FUNCIÓN AUXILIAR PARA OBTENER TAGS (REUTILIZABLE) ---
-const getTagsForComicId = async (comicId, pool) => {
+export const getTagsForComicId = async (comicId, pool) => {
   try {
     const [tags] = await pool.query(
       `SELECT t.id, t.nombre 
@@ -16,7 +17,7 @@ const getTagsForComicId = async (comicId, pool) => {
       [comicId]
     );
 
-    return tags.map(tag => ({ id: tag.id, name: tag.nombre }));
+    return tags.map(tag => ({ id: tag.id, nombre: tag.nombre }));
   } catch (error) {
     console.error(`Error fetching tags for comic_id ${comicId}:`, error);
     return []; 
@@ -27,7 +28,7 @@ const getTagsForComicId = async (comicId, pool) => {
 };
 
 // --- FUNCIÓN AUXILIAR PARA MAPEAR EL RESULTADO DEL CÓMIC A LA ESTRUCTURA DESEADA ---
-const mapComicData = (comicRow, tags = [], likesCount = 0, commentsCount = 0) => {
+export const mapComicData = (comicRow, tags = [], likesCount = 0, commentsCount = 0) => {
   return {
     id: comicRow.id.toString(),
     title: comicRow.nombre,
@@ -173,73 +174,10 @@ export const getComicPdfById = async (req, res) => {
   }
 };
 
-// Crear un nuevo cómic
-export const createComic = async (req, res) => {
-  // ... (código de createComic se mantiene igual, los tags se añadirían con addTagToComic por separado)
-  try {
-    const pool = getDbConnection();
-    const { nombre, editorial, ruta_pdf, coleccion, familia, imagen_portada } = req.body;
-    if (!nombre || !editorial || !ruta_pdf || typeof coleccion !== 'boolean' || !familia || !imagen_portada) {
-      return res.status(400).json({ success: false, message: "Missing or invalid required fields. Ensure 'coleccion' is a boolean." });
-    }
-    const [result] = await pool.query(
-      `INSERT INTO comics (nombre, editorial, ruta_pdf, coleccion, familia, imagen_portada) VALUES (?, ?, ?, ?, ?, ?)`,
-      [nombre, editorial, ruta_pdf, coleccion, familia, imagen_portada]
-    );
-    const [newComicRows] = await pool.query("SELECT * FROM comics WHERE id = ?", [result.insertId]);
-    if (newComicRows.length === 0) {
-        return res.status(500).json({ success: false, message: "Failed to retrieve newly created comic."});
-    }
-    // El nuevo cómic no tendrá tags hasta que se añadan explícitamente.
-    // Likes y comments serán 0.
-    res.status(201).json({ success: true, message: "Comic created successfully", comic: mapComicData(newComicRows[0], []) });
-  } catch (error) {
-    console.error("Error in createComic:", error);
-    res.status(500).json({ success: false, message: "Failed to create comic", error: error.message });
-  }
-};
-
-// Actualizar un cómic
-export const updateComic = async (req, res) => {
-  // ... (código de updateComic se mantiene igual, los tags se actualizan con add/removeTagToComic)
-  try {
-    const pool = getDbConnection();
-    const { id } = req.params;
-    const { nombre, editorial, ruta_pdf, coleccion, familia, imagen_portada } = req.body;
-    if (!nombre || !editorial || !ruta_pdf || typeof coleccion !== 'boolean' || !familia || !imagen_portada) {
-      return res.status(400).json({ success: false, message: "Missing or invalid required fields. Ensure 'coleccion' is a boolean." });
-    }
-    const [result] = await pool.query(
-      `UPDATE comics SET nombre = ?, editorial = ?, ruta_pdf = ?, coleccion = ?, familia = ?, imagen_portada = ? WHERE id = ?`,
-      [nombre, editorial, ruta_pdf, coleccion, familia, imagen_portada, id]
-    );
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: "Comic not found or no changes made" });
-    }
-    const [updatedComicRows] = await pool.query("SELECT * FROM comics WHERE id = ?", [id]);
-     if (updatedComicRows.length === 0) {
-        return res.status(404).json({ success: false, message: "Failed to retrieve updated comic."});
-    }
-    const tags = await getTagsForComicId(id, pool); // Obtener tags actuales
-    const [likesResult] = await pool.query("SELECT COUNT(*) as count FROM likes WHERE comic_id = ?", [id]);
-    const likesCount = likesResult[0]?.count || 0;
-    const [commentsResult] = await pool.query("SELECT COUNT(*) as count FROM comentarios WHERE comic_id = ?", [id]);
-    const commentsCount = commentsResult[0]?.count || 0;
-
-    res.status(200).json({ success: true, message: "Comic updated successfully", comic: mapComicData(updatedComicRows[0], tags, likesCount, commentsCount) });
-  } catch (error) {
-    console.error(`Error in updateComic for ID ${req.params.id}:`, error);
-    res.status(500).json({ success: false, message: "Failed to update comic", error: error.message });
-  }
-};
-
-// Eliminar un cómic
 export const deleteComic = async (req, res) => {
-  // ... (código de deleteComic se mantiene igual)
   try {
     const pool = getDbConnection();
     const { id } = req.params;
-    // Las relaciones en comics_tags se borrarán por ON DELETE CASCADE
     const [result] = await pool.query("DELETE FROM comics WHERE id = ?", [id]);
     if (result.affectedRows === 0) {
       return res.status(404).json({ success: false, message: "Comic not found" });
@@ -251,9 +189,6 @@ export const deleteComic = async (req, res) => {
   }
 };
 
-// --- Las funciones addTagToComic y removeTagFromComic ---
-// Estas funciones son para la relación comic-tag, se mantienen como las tenías
-// ya que las importas en comic-routes.js
 export const addTagToComic = async (req, res) => {
   try {
     const pool = getDbConnection();
@@ -382,15 +317,10 @@ export const getRecentlyAddedComicsController = async (req, res) => {
 export const getComicsForYou = async (req, res) => {
   try {
     const pool = getDbConnection();
-    // Asumiendo que tienes el ID del usuario logeado desde un middleware de autenticación
-    // Por ejemplo: req.user = { id: userIdFromToken };
     const userId = req.user?.id;
-
     if (!userId) {
       return res.status(401).json({ success: false, message: "Usuario no autenticado." });
     }
-
-    // 1. Obtener los comic_id de los cómics que le han gustado al usuario (tabla 'likes')
     const [likedComicsRows] = await pool.query(
       `SELECT comic_id FROM likes WHERE user_id = ?`, // Usamos la tabla 'likes'
       [userId]
@@ -402,7 +332,6 @@ export const getComicsForYou = async (req, res) => {
 
     const likedComicIds = likedComicsRows.map(like => like.comic_id);
 
-    // 2. Identificar las dos etiquetas más repetidas de esos cómics
     const [topTagsRows] = await pool.query(
       `SELECT ct.tag_id, t.nombre as tag_name, COUNT(ct.tag_id) as tag_count
        FROM comics_tags ct
@@ -411,7 +340,7 @@ export const getComicsForYou = async (req, res) => {
        GROUP BY ct.tag_id, t.nombre
        ORDER BY tag_count DESC
        LIMIT 2`,
-      [likedComicIds] // Pasamos el array de IDs directamente
+      [likedComicIds] 
     );
 
     if (topTagsRows.length === 0) {
@@ -420,7 +349,6 @@ export const getComicsForYou = async (req, res) => {
 
     const topTagIds = topTagsRows.map(tag => tag.tag_id);
 
-    // 3. Obtener todos los cómics que tengan alguna de esas dos etiquetas
     const [comicsWithTopTagsRows] = await pool.query(
       `SELECT DISTINCT
           c.id, c.nombre, c.editorial, c.ruta_pdf, c.coleccion, c.familia, c.imagen_portada, c.created_at,
@@ -436,7 +364,6 @@ export const getComicsForYou = async (req, res) => {
     const comicsWithDetails = await Promise.all(
       comicsWithTopTagsRows.map(async (comicRow) => {
         const tags = await getTagsForComicId(comicRow.id, pool);
-        // likes_count y comments_count ya vienen de la subconsulta
         return mapComicData(comicRow, tags, comicRow.likes_count, comicRow.comments_count);
       })
     );
@@ -445,7 +372,7 @@ export const getComicsForYou = async (req, res) => {
         success: true,
         comics: comicsWithDetails,
         message: `Cómics recomendados basados en las etiquetas más frecuentes de tus 'Me Gusta': ${topTagsRows.map(t => t.tag_name).join(', ')}.`,
-        recommended_based_on_tags: topTagsRows.map(t => ({id: t.tag_id, name: t.tag_name}))
+        recommended_based_on_tags: topTagsRows.map(t => ({id: t.tag_id, nombre: t.tag_name}))
     });
 
   } catch (error) {
@@ -453,9 +380,6 @@ export const getComicsForYou = async (req, res) => {
     res.status(500).json({ success: false, message: "Error del servidor al obtener cómics para ti.", error: error.message });
   }
 };
-
-// En comic-controller.js
-// ... (tus otras importaciones y funciones)
 
 export const getPopularComicsByTagName = async (req, res) => {
   try {
@@ -533,16 +457,9 @@ export const getUserLikedComicsTags = async (req, res) => {
       [userId]
     );
 
-    // El resultado ya debería estar en el formato { id: ..., name: ... }
-    // gracias al SELECT t.id, t.nombre. Si necesitas renombrar 'nombre' a 'name'
-    // para que coincida exactamente con TagInfo (id, name) de Kotlin, puedes mapear:
-    // const userTags = likedComicsTagsRows.map(tag => ({ id: tag.id, name: tag.nombre }));
-    // Pero como ya seleccionas t.nombre, y mapComicData usa 'name' para los tags,
-    // `likedComicsTagsRows` debería estar bien si la data class TagInfo usa @SerializedName("nombre") o si el campo es 'nombre'.
-    // Para asegurar compatibilidad con `data class TagInfo(val id: Int, val name: String)`:
     const userTags = likedComicsTagsRows.map(tag => ({
         id: tag.id,
-        name: tag.nombre // Aseguramos que la propiedad se llame 'name'
+        nombre: tag.nombre // Aseguramos que la propiedad se llame 'name'
     }));
 
 
@@ -553,9 +470,6 @@ export const getUserLikedComicsTags = async (req, res) => {
     res.status(500).json({ success: false, message: "Error del servidor al obtener etiquetas de cómics gustados.", error: error.message });
   }
 };
-
-// En comic-controller.js
-// ... (importaciones y funciones auxiliares como getTagsForComicId, mapComicData) ...
 
 export const searchAllComics = async (req, res) => {
     const searchTerm = req.query.q?.toLowerCase() || '';
@@ -617,4 +531,122 @@ export const searchAllComics = async (req, res) => {
             error: error.message,
         });
     }
+};
+
+export const uploadComicWithMetadata = async (req, res) => {
+  const pool = getDbConnection();
+  let connection; // Declarar la conexión para que sea accesible en el bloque finally
+
+  try {
+    const { nombre, editorial, coleccion, familia, tagIds } = req.body;
+
+    // --- Validación de Metadatos Básicos ---
+    if (!nombre || !editorial || typeof coleccion === 'undefined' || !familia) {
+      // No es necesario liberar la conexión aquí, aún no se ha obtenido
+      return res.status(400).json({ success: false, message: "Faltan campos obligatorios: nombre, editorial, coleccion, familia." });
+    }
+
+    // --- Validación de Archivo PDF ---
+    if (!req.files || !req.files.comicPdf || !req.files.comicPdf[0]) {
+      // No es necesario liberar la conexión aquí
+      return res.status(400).json({ success: false, message: "No se ha subido ningún archivo PDF para 'comicPdf'." });
+    }
+
+    const pdfFile = req.files.comicPdf[0];
+    const ruta_pdf = path.join('public/comics', pdfFile.filename).replace(/\\/g, '/');
+
+    // --- Manejo de Imagen de Portada (Opcional) ---
+    let imagen_portada = '/comics/default_cover.jpg';
+    if (req.files && req.files.comicImage && req.files.comicImage[0]) {
+      const imageFile = req.files.comicImage[0];
+      imagen_portada = path.join('public/comics', imageFile.filename).replace(/\\/g, '/');
+    } else if (req.body.imagen_portada_url) {
+        imagen_portada = req.body.imagen_portada_url;
+    }
+
+    const userId = req.user?.id;
+    const parsedColeccion = coleccion === 'true' || coleccion === true;
+
+    // --- Iniciar Transacción ---
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // --- Insertar el Cómic ---
+    const comicSql = `INSERT INTO comics (nombre, editorial, ruta_pdf, coleccion, familia, imagen_portada ${userId ? ', user_id_uploader' : ''}) 
+                      VALUES (?, ?, ?, ?, ?, ? ${userId ? ', ?' : ''})`;
+    const comicParams = userId
+        ? [nombre, editorial, ruta_pdf, parsedColeccion, familia, imagen_portada, userId]
+        : [nombre, editorial, ruta_pdf, parsedColeccion, familia, imagen_portada];
+    
+    const [result] = await connection.query(comicSql, comicParams);
+    const newComicId = result.insertId;
+
+    // --- Procesar y Asignar Etiquetas ---
+    if (tagIds) {
+      let parsedTagIds = [];
+      if (typeof tagIds === 'string') {
+        parsedTagIds = tagIds.split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id));
+      } else if (Array.isArray(tagIds)) {
+        parsedTagIds = tagIds.map(id => parseInt(id, 10)).filter(id => !isNaN(id));
+      }
+
+      if (parsedTagIds.length > 0) {
+        const tagInsertPromises = parsedTagIds.map(tagId => {
+          const comicsTagsSql = "INSERT IGNORE INTO comics_tags (comic_id, tag_id) VALUES (?, ?)";
+          return connection.query(comicsTagsSql, [newComicId, tagId]);
+        });
+        await Promise.all(tagInsertPromises);
+      }
+    }
+    
+    // --- Confirmar Transacción ---
+    await connection.commit();
+
+    // --- Obtener Datos del Cómic Creado para la Respuesta (después del commit) ---
+    // Puedes usar la misma conexión o una nueva del pool. Usar la misma es eficiente.
+    const [newComicRows] = await connection.query("SELECT * FROM comics WHERE id = ?", [newComicId]);
+    
+    if (newComicRows.length === 0) {
+        // Esto no debería suceder si el commit fue exitoso y el ID es correcto,
+        // pero es una comprobación de seguridad.
+        // Técnicamente, si esto falla después del commit, los datos están guardados.
+        // Considera cómo manejar este caso extremo.
+        console.error("Error crítico: Cómic no encontrado después del commit.");
+        // No se puede hacer rollback aquí porque ya se hizo commit.
+        return res.status(500).json({ success: false, message: "Fallo al recuperar el cómic después de guardarlo."});
+    }
+    
+    const assignedTags = await getTagsForComicId(newComicId, connection); // Pasa la conexión
+    const newComicData = mapComicData(newComicRows[0], assignedTags, 0, 0);
+
+    res.status(201).json({
+      success: true,
+      message: "Cómic subido y creado exitosamente con sus etiquetas!",
+      comic: newComicData
+    });
+
+  } catch (error) {
+    // Si hay una conexión y aún no se ha hecho commit (o falló antes), hacer rollback
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        console.error("Error durante el rollback:", rollbackError);
+        // No se puede hacer mucho más aquí, solo loggear.
+      }
+    }
+
+    console.error("Error en uploadComicWithMetadata:", error);
+    if (error instanceof multer.MulterError) {
+      return res.status(400).json({ success: false, message: `Error de subida: ${error.message}` });
+    } else if (error.message && error.message.includes('Formato de archivo no permitido')) {
+        return res.status(400).json({ success: false, message: error.message });
+    }
+    // Error general del servidor o error de la DB
+    res.status(500).json({ success: false, message: "Error del servidor al subir el cómic.", error: error.message });
+  } finally {
+    if (connection) {
+      connection.release(); // Liberar la conexión de vuelta al pool en todos los casos
+    }
+  }
 };

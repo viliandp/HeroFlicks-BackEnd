@@ -12,6 +12,7 @@ import comicRoutes from "./routes/comic-routes.js";
 
 // Importar NUEVAS Rutas
 import tagRoutes from './routes/tag-routes.js';
+import listRoutes from './routes/list-routes.js';
 import likeRoutes from './routes/like-routes.js';
 import pendienteRoutes from './routes/pendiente-routes.js';
 import commentRoutes from './routes/comment-routes.js';
@@ -57,7 +58,7 @@ app.use("/api", likeRoutes);
 app.use("/api", pendienteRoutes);
 app.use("/api", commentRoutes);
 app.use("/api", notificationRoutes);
-
+app.use('/api/lists', listRoutes);
 // Rutas para Logros
 // '/api/logros' para el CRUD de definiciones de logros (GET /, POST /, PUT /:id, DELETE /:id)
 // Y también '/api' para las rutas que actúan sobre usuarios (/users/me/logros, /award)

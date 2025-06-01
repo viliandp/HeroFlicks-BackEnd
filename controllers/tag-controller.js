@@ -36,23 +36,49 @@ export const createTag = async (req, res) => {
         const pool = getDbConnection();
         const { nombre } = req.body;
 
-        if (!nombre) {
-            return res.status(400).json({ success: false, message: "Tag name is required" });
+        if (!nombre || nombre.trim() === "") { // Añadida validación para nombre vacío
+            return res.status(400).json({ success: false, message: "Tag name is required and cannot be empty" });
         }
 
-        // Verificar si ya existe (por la constraint UNIQUE)
+        let newTagId;
         try {
-            const [result] = await pool.query("INSERT INTO tags (nombre) VALUES (?)", [nombre]);
-            res.status(201).json({ success: true, message: "Tag created successfully", tagId: result.insertId });
+            const [result] = await pool.query("INSERT INTO tags (nombre) VALUES (?)", [nombre.trim()]);
+            newTagId = result.insertId;
         } catch (insertError) {
             if (insertError.code === 'ER_DUP_ENTRY') {
+                // Si ya existe, podríamos recuperarla y devolverla como si se hubiera creado,
+                // o simplemente devolver el error 409. Por ahora, devolvemos 409.
                 return res.status(409).json({ success: false, message: "Tag name already exists" });
             }
-            throw insertError; // Re-lanzar otros errores de inserción
+            // Para otros errores de inserción, los relanzamos para que los capture el catch exterior.
+            console.error("Error during INSERT in createTag:", insertError);
+            return res.status(500).json({ success: false, message: "Database error during tag creation." });
         }
-    } catch (error) {
-        console.error("Error in createTag:", error);
-        res.status(500).json({ success: false, message: "Failed to create tag" });
+
+        // Si la inserción fue exitosa, obtener la etiqueta recién creada para devolverla
+        if (newTagId) {
+            const [newTagRows] = await pool.query("SELECT id, nombre FROM tags WHERE id = ?", [newTagId]);
+            if (newTagRows.length > 0) {
+                const newTag = newTagRows[0];
+                res.status(201).json({
+                    success: true,
+                    message: "Tag created successfully",
+                    tag: newTag // <-- ¡AQUÍ ESTÁ EL CAMBIO IMPORTANTE!
+                });
+            } else {
+                // Esto sería muy raro si la inserción fue exitosa.
+                console.error("Error in createTag: Newly inserted tag not found with ID:", newTagId);
+                res.status(500).json({ success: false, message: "Failed to retrieve newly created tag." });
+            }
+        } else {
+            // Esto también sería raro si no hubo error de inserción.
+             console.error("Error in createTag: InsertId was not obtained after insert.");
+            res.status(500).json({ success: false, message: "Failed to obtain ID for newly created tag." });
+        }
+
+    } catch (error) { // Catch general para errores no esperados
+        console.error("Unexpected error in createTag:", error);
+        res.status(500).json({ success: false, message: "Failed to create tag due to an unexpected server error" });
     }
 };
 
