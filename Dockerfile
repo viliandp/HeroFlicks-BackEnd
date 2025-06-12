@@ -8,7 +8,7 @@ WORKDIR /usr/src/app
 COPY package.json package-lock.json* ./
 
 # Instala solo dependencias de producción
-RUN npm install --production --silent
+RUN npm install --production
 
 # Copia el resto del código de la aplicación
 COPY . .
